@@ -26,29 +26,35 @@ import Text from "../ui/text";
 
 interface UserAuthFormProps extends React.HTMLAttributes<HTMLDivElement> {}
 
-export function UserAuthForm({ className, ...props }: UserAuthFormProps) {
+export function SignupForm({ className, ...props }: UserAuthFormProps) {
   const { t } = useTranslation(["components/auth"]);
   const [isLoading, setIsLoading] = React.useState<boolean>(false);
   const { login } = React.useContext(AuthContext);
 
-  const formSchema = z.object({
-    user: z.string().min(1, t("form.errors.usernameRequired")),
-    password: z.string().min(1, t("form.errors.passwordRequired")),
-  });
+  const formSchema = z
+    .object({
+      user: z.string().min(1, t("form.errors.usernameRequired")),
+      password: z.string().min(1, t("form.errors.passwordRequired")),
+      confirmPassword: z.string().min(1, t("form.errors.passwordRequired")),
+    })
+    .refine((data) => data.password == data.confirmPassword, {
+      message: t("form.errors.passwordsDontMatch"),
+      path: ["confirmPassword"],
+    });
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     mode: "onChange",
-    defaultValues: { user: "", password: "" },
+    defaultValues: { user: "", password: "", confirmPassword: "" },
   });
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsLoading(true);
     try {
       await axios.post(
-        "/login",
+        "/signup",
         {
-          user: values.user,
+          username: values.user,
           password: values.password,
         },
         {
@@ -124,6 +130,21 @@ export function UserAuthForm({ className, ...props }: UserAuthFormProps) {
               </FormItem>
             )}
           />
+          <FormField
+            name="confirmPassword"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("form.confirmPassword")}</FormLabel>
+                <FormControl>
+                  <Input
+                    className="text-md w-full border border-input bg-background p-2 hover:bg-accent hover:text-accent-foreground dark:[color-scheme:dark]"
+                    type="password"
+                    {...field}
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
           <div className="flex flex-row gap-2 pt-5">
             <Button
               variant="select"
@@ -132,15 +153,15 @@ export function UserAuthForm({ className, ...props }: UserAuthFormProps) {
               aria-label={t("form.login")}
             >
               {isLoading && <ActivityIndicator className="mr-2 h-4 w-4" />}
-              {t("form.login")}
+              {t("form.signup")}
             </Button>
           </div>
         </form>
       </Form>
-      <a href="/signup">
+      <a href="/login">
         <Button variant="link" className="w-full">
           <Text as="small" className="text-center">
-            {t("form.signup")}
+            {t("form.login")}
           </Text>
         </Button>
       </a>

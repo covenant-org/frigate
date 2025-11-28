@@ -5,6 +5,7 @@ import react from "@vitejs/plugin-react-swc";
 import monacoEditorPlugin from "vite-plugin-monaco-editor";
 
 const proxyHost = process.env.PROXY_HOST || "localhost:5000";
+const https = !!process.env.HTTPS_HOST;
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -14,25 +15,31 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: `http://${proxyHost}`,
+        target: `http${https && "s"}://${proxyHost}`,
+        secure: !https,
         ws: true,
       },
       "/vod": {
-        target: `http://${proxyHost}`,
+        target: `http${https && "s"}://${proxyHost}`,
+        secure: !https,
       },
       "/clips": {
-        target: `http://${proxyHost}`,
+        target: `http${https && "s"}://${proxyHost}`,
+        secure: !https,
       },
       "/exports": {
-        target: `http://${proxyHost}`,
+        target: `http${https && "s"}://${proxyHost}`,
+        secure: !https,
       },
       "/ws": {
-        target: `ws://${proxyHost}`,
+        target: `ws${https && "s"}://${proxyHost}`,
+        secure: !https,
         ws: true,
       },
       "/live": {
-        target: `ws://${proxyHost}`,
+        target: `ws${https && "s"}://${proxyHost}`,
         changeOrigin: true,
+        secure: !https,
         ws: true,
       },
     },

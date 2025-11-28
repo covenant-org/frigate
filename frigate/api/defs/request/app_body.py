@@ -17,6 +17,11 @@ class AppPostUsersBody(BaseModel):
     role: Optional[str] = "viewer"
 
 
+class AppSignupBody(BaseModel):
+    username: str
+    password: str
+
+
 class AppPostLoginBody(BaseModel):
     user: str
     password: str
