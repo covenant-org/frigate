@@ -30,15 +30,21 @@ export function UserAuthForm({ className, ...props }: UserAuthFormProps) {
   const [isLoading, setIsLoading] = React.useState<boolean>(false);
   const { login } = React.useContext(AuthContext);
 
-  const formSchema = z.object({
-    user: z.string().min(1, t("form.errors.usernameRequired")),
-    password: z.string().min(1, t("form.errors.passwordRequired")),
-  });
+  const formSchema = z
+    .object({
+      user: z.string().min(1, t("form.errors.usernameRequired")),
+      password: z.string().min(1, t("form.errors.passwordRequired")),
+      confirmPassword: z.string().min(1, t("form.errors.passwordRequired")),
+    })
+    .refine((data) => data.password == data.confirmPassword, {
+      message: t("form.errors.passwordsDontMatch"),
+      path: ["confirmPassword"],
+    });
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     mode: "onChange",
-    defaultValues: { user: "", password: "" },
+    defaultValues: { user: "", password: "", confirmPassword: "" },
   });
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
@@ -113,6 +119,21 @@ export function UserAuthForm({ className, ...props }: UserAuthFormProps) {
             render={({ field }) => (
               <FormItem>
                 <FormLabel>{t("form.password")}</FormLabel>
+                <FormControl>
+                  <Input
+                    className="text-md w-full border border-input bg-background p-2 hover:bg-accent hover:text-accent-foreground dark:[color-scheme:dark]"
+                    type="password"
+                    {...field}
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+          <FormField
+            name="confirmPassword"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("form.confirmPassword")}</FormLabel>
                 <FormControl>
                   <Input
                     className="text-md w-full border border-input bg-background p-2 hover:bg-accent hover:text-accent-foreground dark:[color-scheme:dark]"
