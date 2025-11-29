@@ -52,7 +52,8 @@ class Event(Model):  # type: ignore[misc]
 class Timeline(Model):  # type: ignore[misc]
     timestamp = DateTimeField()
     camera = CharField(index=True, max_length=20)
-    source = CharField(index=True, max_length=20)  # ex: tracked object, audio, external
+    # ex: tracked object, audio, external
+    source = CharField(index=True, max_length=20)
     source_id = CharField(index=True, max_length=30)
     class_type = CharField(max_length=50)  # ex: entered_zone, audio_heard
     data = JSONField()  # ex: tracked object id, region, box, etc.
@@ -95,7 +96,8 @@ class ReviewSegment(Model):  # type: ignore[misc]
     end_time = DateTimeField()
     severity = CharField(max_length=30)  # alert, detection
     thumb_path = CharField(unique=True)
-    data = JSONField()  # additional data about detection like list of labels, zone, areas of significant motion
+    # additional data about detection like list of labels, zone, areas of significant motion
+    data = JSONField()
 
 
 class UserReviewStatus(Model):  # type: ignore[misc]
@@ -132,3 +134,27 @@ class User(Model):  # type: ignore[misc]
     )
     password_hash = CharField(null=False, max_length=120)
     notification_tokens = JSONField()
+
+
+class Organization(Model):
+    id = CharField(null=False, primary_key=True, max_length=30)
+    name = CharField(null=False, primary_key=False, max_length=30)
+    admin_id = CharField(max_length=30)
+
+
+class UserOrganization(Model):
+    user_id = CharField(max_length=30)
+    org_id = ForeignKeyField(Organization)
+    role = CharField(
+        max_length=20,
+        default="admin",
+    )
+
+    class Meta:
+        indexes = ((("user_id", "org_id"), True),)
+
+
+class Camera(Model):
+    id = CharField(null=False, primary_key=True, max_length=30)
+    name = CharField(null=False, primary_key=False, max_length=30)
+    org_id = ForeignKeyField(Organization)

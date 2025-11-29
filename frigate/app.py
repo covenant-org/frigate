@@ -56,6 +56,9 @@ from frigate.models import (
     ReviewSegment,
     Timeline,
     User,
+    Organization,
+    UserOrganization,
+    Camera
 )
 from frigate.object_detection.base import ObjectDetectProcess
 from frigate.output.output import output_frames
@@ -79,6 +82,7 @@ from frigate.video import capture_camera, track_camera
 from frigate.watchdog import FrigateWatchdog
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class FrigateApp:
@@ -141,7 +145,8 @@ class FrigateApp:
     def init_queues(self) -> None:
         # Queue for cameras to push tracked objects to
         self.detected_frames_queue: Queue = mp.Queue(
-            maxsize=sum(camera.enabled for camera in self.config.cameras.values()) * 2
+            maxsize=sum(
+                camera.enabled for camera in self.config.cameras.values()) * 2
         )
 
         # Queue for timeline events
@@ -276,10 +281,12 @@ class FrigateApp:
             pragmas={
                 "auto_vacuum": "FULL",  # Does not defragment database
                 "cache_size": -512 * 1000,  # 512MB of cache,
-                "synchronous": "NORMAL",  # Safe when using WAL https://www.sqlite.org/pragma.html#pragma_synchronous
+                # Safe when using WAL https://www.sqlite.org/pragma.html#pragma_synchronous
+                "synchronous": "NORMAL",
             },
             timeout=max(
-                60, 10 * len([c for c in self.config.cameras.values() if c.enabled])
+                60, 10 *
+                len([c for c in self.config.cameras.values() if c.enabled])
             ),
             load_vec_extension=self.config.semantic_search.enabled,
         )
@@ -293,6 +300,9 @@ class FrigateApp:
             ReviewSegment,
             Timeline,
             User,
+            Organization,
+            UserOrganization,
+            Camera
         ]
         self.db.bind(models)
 
@@ -305,7 +315,8 @@ class FrigateApp:
             except PermissionError:
                 logger.error("Unable to write to /config to save export state")
 
-            migrate_exports(self.config.ffmpeg, list(self.config.cameras.keys()))
+            migrate_exports(self.config.ffmpeg, list(
+                self.config.cameras.keys()))
 
     def init_embeddings_client(self) -> None:
         genai_cameras = [
@@ -443,7 +454,8 @@ class FrigateApp:
     def start_camera_processors(self) -> None:
         for name, config in self.config.cameras.items():
             if not self.config.cameras[name].enabled_in_config:
-                logger.info(f"Camera processor not started for disabled camera {name}")
+                logger.info(
+                    f"Camera processor not started for disabled camera {name}")
                 continue
 
             camera_process = util.Process(
@@ -465,30 +477,36 @@ class FrigateApp:
             )
             self.camera_metrics[name].process = camera_process
             camera_process.start()
-            logger.info(f"Camera processor started for {name}: {camera_process.pid}")
+            logger.info(
+                f"Camera processor started for {name}: {camera_process.pid}")
 
     def start_camera_capture_processes(self) -> None:
         shm_frame_count = self.shm_frame_count()
 
         for name, config in self.config.cameras.items():
             if not self.config.cameras[name].enabled_in_config:
-                logger.info(f"Capture process not started for disabled camera {name}")
+                logger.info(
+                    f"Capture process not started for disabled camera {name}")
                 continue
 
             # pre-create shms
             for i in range(shm_frame_count):
-                frame_size = config.frame_shape_yuv[0] * config.frame_shape_yuv[1]
-                self.frame_manager.create(f"{config.name}_frame{i}", frame_size)
+                frame_size = config.frame_shape_yuv[0] * \
+                    config.frame_shape_yuv[1]
+                self.frame_manager.create(
+                    f"{config.name}_frame{i}", frame_size)
 
             capture_process = util.Process(
                 target=capture_camera,
                 name=f"camera_capture:{name}",
-                args=(name, config, shm_frame_count, self.camera_metrics[name]),
+                args=(name, config, shm_frame_count,
+                      self.camera_metrics[name]),
             )
             capture_process.daemon = True
             self.camera_metrics[name].capture_process = capture_process
             capture_process.start()
-            logger.info(f"Capture process started for {name}: {capture_process.pid}")
+            logger.info(
+                f"Capture process started for {name}: {capture_process.pid}")
 
     def start_audio_processor(self) -> None:
         audio_cameras = [
@@ -498,7 +516,8 @@ class FrigateApp:
         ]
 
         if audio_cameras:
-            self.audio_process = AudioProcessor(audio_cameras, self.camera_metrics)
+            self.audio_process = AudioProcessor(
+                audio_cameras, self.camera_metrics)
             self.audio_process.start()
             self.processes["audio_detector"] = self.audio_process.pid or 0
 
@@ -517,7 +536,8 @@ class FrigateApp:
         self.event_processor.start()
 
     def start_event_cleanup(self) -> None:
-        self.event_cleanup = EventCleanup(self.config, self.stop_event, self.db)
+        self.event_cleanup = EventCleanup(
+            self.config, self.stop_event, self.db)
         self.event_cleanup.start()
 
     def start_record_cleanup(self) -> None:
@@ -525,7 +545,8 @@ class FrigateApp:
         self.record_cleanup.start()
 
     def start_storage_maintainer(self) -> None:
-        self.storage_maintainer = StorageMaintainer(self.config, self.stop_event)
+        self.storage_maintainer = StorageMaintainer(
+            self.config, self.stop_event)
         self.storage_maintainer.start()
 
     def start_stats_emitter(self) -> None:
@@ -543,7 +564,8 @@ class FrigateApp:
         self.stats_emitter.start()
 
     def start_watchdog(self) -> None:
-        self.frigate_watchdog = FrigateWatchdog(self.detectors, self.stop_event)
+        self.frigate_watchdog = FrigateWatchdog(
+            self.detectors, self.stop_event)
         self.frigate_watchdog.start()
 
     def shm_frame_count(self) -> int:
@@ -601,14 +623,21 @@ class FrigateApp:
                     }
                 ).execute()
 
-                logger.info("********************************************************")
-                logger.info("********************************************************")
-                logger.info("***    Auth is enabled, but no users exist.          ***")
-                logger.info("***    Created a default user:                       ***")
-                logger.info("***    User: admin                                   ***")
+                logger.info(
+                    "********************************************************")
+                logger.info(
+                    "********************************************************")
+                logger.info(
+                    "***    Auth is enabled, but no users exist.          ***")
+                logger.info(
+                    "***    Created a default user:                       ***")
+                logger.info(
+                    "***    User: admin                                   ***")
                 logger.info(f"***    Password: {password}   ***")
-                logger.info("********************************************************")
-                logger.info("********************************************************")
+                logger.info(
+                    "********************************************************")
+                logger.info(
+                    "********************************************************")
             elif self.config.auth.reset_admin_password:
                 password = secrets.token_hex(16)
                 password_hash = hash_password(
@@ -621,12 +650,17 @@ class FrigateApp:
                     notification_tokens=[],
                 ).execute()
 
-                logger.info("********************************************************")
-                logger.info("********************************************************")
-                logger.info("***    Reset admin password set in the config.       ***")
+                logger.info(
+                    "********************************************************")
+                logger.info(
+                    "********************************************************")
+                logger.info(
+                    "***    Reset admin password set in the config.       ***")
                 logger.info(f"***    Password: {password}   ***")
-                logger.info("********************************************************")
-                logger.info("********************************************************")
+                logger.info(
+                    "********************************************************")
+                logger.info(
+                    "********************************************************")
 
     def start(self) -> None:
         logger.info(f"Starting Frigate ({VERSION})")
@@ -717,7 +751,8 @@ class FrigateApp:
         for camera, metrics in self.camera_metrics.items():
             capture_process = metrics.capture_process
             if capture_process is not None:
-                logger.info(f"Waiting for capture process for {camera} to stop")
+                logger.info(
+                    f"Waiting for capture process for {camera} to stop")
                 capture_process.terminate()
                 capture_process.join()
 

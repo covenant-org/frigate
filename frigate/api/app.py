@@ -28,7 +28,7 @@ from frigate.api.defs.query.app_query_parameters import AppTimelineHourlyQueryPa
 from frigate.api.defs.request.app_body import AppConfigSetBody
 from frigate.api.defs.tags import Tags
 from frigate.config import FrigateConfig
-from frigate.models import Event, Timeline
+from frigate.models import Event, Timeline, Camera, Organization
 from frigate.stats.prometheus import get_metrics, update_metrics
 from frigate.util.builtin import (
     clean_camera_user_pass,
@@ -107,7 +107,22 @@ def version():
 
 @router.get("/stats")
 def stats(request: Request):
-    return JSONResponse(content=request.app.stats_emitter.get_latest_stats())
+    user = request.headers.get("remote-user", "anonymous")
+    org = Organization.get(Organization.admin_id == user)
+    cameras = []
+    if org is not None:
+        print(org.name)
+        cameras = Camera.select().where(Camera.org_id == org.id)
+        cameras = [camera.name for camera in cameras]
+
+    stats = request.app.stats_emitter.get_latest_stats()
+    cameras_res = dict()
+    for name, config in stats["cameras"].items():
+        if name in cameras:
+            cameras_res[name] = config
+    stats["cameras"] = cameras_res
+
+    return JSONResponse(content=stats)
 
 
 @router.get("/stats/history")
@@ -141,7 +156,18 @@ def config(request: Request):
     # remove the proxy secret
     config["proxy"].pop("auth_secret", None)
 
+    org = Organization.get(Organization.admin_id ==
+                           request.headers.get("remote-user", "anonymous"))
+    print(org.name)
+    cameras = []
+    if org is not None:
+        cameras = Camera.select().where(Camera.org_id == org.id)
+        cameras = [camera.name for camera in cameras]
+
     for camera_name, camera in request.app.frigate_config.cameras.items():
+        if camera_name not in cameras:
+            del config["cameras"][camera_name]
+            continue
         camera_dict = config["cameras"][camera_name]
 
         # clean paths
@@ -164,6 +190,9 @@ def config(request: Request):
     for stream_name, stream in go2rtc.get("streams", {}).items():
         if stream is None:
             continue
+        if stream_name not in cameras:
+            del config["go2rtc"]["streams"][stream_name]
+            continue
         if isinstance(stream, str):
             cleaned = clean_camera_user_pass(stream)
         else:
@@ -174,7 +203,8 @@ def config(request: Request):
 
         config["go2rtc"]["streams"][stream_name] = cleaned
 
-    config["plus"] = {"enabled": request.app.frigate_config.plus_api.is_active()}
+    config["plus"] = {
+        "enabled": request.app.frigate_config.plus_api.is_active()}
     config["model"]["colormap"] = config_obj.model.colormap
     config["model"]["all_attributes"] = config_obj.model.all_attributes
     config["model"]["non_logo_attributes"] = config_obj.model.non_logo_attributes
@@ -421,7 +451,8 @@ def ffprobe(request: Request, paths: str = ""):
 
         if not request.app.frigate_config.cameras[camera].enabled:
             return JSONResponse(
-                content=({"success": False, "message": f"{camera} is not enabled."}),
+                content=(
+                    {"success": False, "message": f"{camera} is not enabled."}),
                 status_code=404,
             )
 
@@ -438,7 +469,8 @@ def ffprobe(request: Request, paths: str = ""):
     output = []
 
     for path in paths:
-        ffprobe = ffprobe_stream(request.app.frigate_config.ffmpeg, path.strip())
+        ffprobe = ffprobe_stream(
+            request.app.frigate_config.ffmpeg, path.strip())
         output.append(
             {
                 "return_code": ffprobe.returncode,
@@ -502,7 +534,8 @@ async def logs(
         except FileNotFoundError as e:
             logger.error(e)
             return JSONResponse(
-                content={"success": False, "message": "Could not find log file"},
+                content={"success": False,
+                         "message": "Could not find log file"},
                 status_code=500,
             )
 
@@ -595,7 +628,8 @@ def restart():
 def get_labels(camera: str = ""):
     try:
         if camera:
-            events = Event.select(Event.label).where(Event.camera == camera).distinct()
+            events = Event.select(Event.label).where(
+                Event.camera == camera).distinct()
         else:
             events = Event.select(Event.label).distinct()
     except Exception as e:

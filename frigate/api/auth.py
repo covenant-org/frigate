@@ -28,7 +28,7 @@ from frigate.api.defs.request.app_body import (
 from frigate.api.defs.tags import Tags
 from frigate.config import AuthConfig, ProxyConfig
 from frigate.const import CONFIG_DIR, JWT_SECRET_ENV_VAR, PASSWORD_HASH_ALGORITHM
-from frigate.models import User
+from frigate.models import User, Organization, UserOrganization
 
 logger = logging.getLogger(__name__)
 
@@ -452,6 +452,15 @@ def signup(
             User.notification_tokens: [],
         }
     ).execute()
+    org_id = Organization.insert({
+        Organization.name: f"{body.username}'s org",
+        Organization.admin_id: body.username,
+    }).execute()
+    UserOrganization.insert({
+        UserOrganization.user_id: body.username,
+        UserOrganization.org_id: org_id,
+        UserOrganization.role: role,
+    }).execute()
     res = JSONResponse(content={"username": body.username})
     JWT_COOKIE_NAME = request.app.frigate_config.auth.cookie_name
     JWT_COOKIE_SECURE = request.app.frigate_config.auth.cookie_secure

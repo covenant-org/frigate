@@ -42,13 +42,14 @@ def setup_logging() -> None:
     global log_listener, log_queue, manager
     manager = mp.Manager()
     log_queue = manager.Queue()
-    log_listener = QueueListener(log_queue, LOG_HANDLER, respect_handler_level=True)
+    log_listener = QueueListener(
+        log_queue, LOG_HANDLER, respect_handler_level=True)
 
     atexit.register(_stop_logging)
     log_listener.start()
 
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         handlers=[],
         force=True,
     )
