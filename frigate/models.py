@@ -138,13 +138,13 @@ class User(Model):  # type: ignore[misc]
 
 class Organization(Model):
     id = CharField(null=False, primary_key=True, max_length=30)
-    name = CharField(null=False, primary_key=False, max_length=30)
-    admin_id = CharField(max_length=30)
+    name = CharField(max_length=30)
+    user = ForeignKeyField(User, backref="owner")
 
 
 class UserOrganization(Model):
-    user_id = CharField(max_length=30)
-    org_id = ForeignKeyField(Organization)
+    user = ForeignKeyField(User)
+    org = ForeignKeyField(Organization)
     role = CharField(
         max_length=20,
         default="admin",
@@ -154,7 +154,14 @@ class UserOrganization(Model):
         indexes = ((("user_id", "org_id"), True),)
 
 
+class Station(Model):
+    # machine id (/etc/machine-id) or jetson serial
+    id = CharField(null=False, primary_key=True, max_length=32)
+    org = ForeignKeyField(Organization, null=True, backref="stations")
+
+
 class Camera(Model):
+    # mac
     id = CharField(null=False, primary_key=True, max_length=30)
     name = CharField(null=False, primary_key=False, max_length=30)
-    org_id = ForeignKeyField(Organization)
+    station = ForeignKeyField(Station, backref="cameras")

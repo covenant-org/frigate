@@ -1,4 +1,4 @@
-"""Peewee migrations -- 032_create_camera_table.py.
+"""Peewee migrations -- 031_create_covenant_structure.py.
 
 Some examples (model - class or model name)::
 
@@ -28,9 +28,6 @@ from contextlib import suppress
 
 import peewee as pw
 from peewee_migrate import Migrator
-from frigate.models import Camera
-
-SQL = pw.SQL
 
 
 with suppress(ImportError):
@@ -40,18 +37,53 @@ with suppress(ImportError):
 def migrate(migrator: Migrator, database: pw.Database, *, fake=False):
     """Write your migrations here."""
 
-    Camera._meta.database = database
-    migrator.sql(
-        """
-        CREATE TABLE IF NOT EXISTS "camera" (
-            "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-            "name" VARCHAR(30) NOT NULL,
-            "org_id" INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY ("org_id") REFERENCES "organization" ("id") ON DELETE SET NULL
+    # Create organization table
+    migrator.sql("""
+        CREATE TABLE IF NOT EXISTS organization (
+            id VARCHAR(30) PRIMARY KEY NOT NULL,
+            name VARCHAR(30),
+            user_id VARCHAR(30) NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES user(username)
         )
-        """
-    )
+    """)
+
+    # Create userorganization table
+    migrator.sql("""
+        CREATE TABLE IF NOT EXISTS userorganization (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id VARCHAR(30) NOT NULL,
+            org_id VARCHAR(30) NOT NULL,
+            role VARCHAR(20) DEFAULT 'admin',
+            FOREIGN KEY (user_id) REFERENCES user(username),
+            FOREIGN KEY (org_id) REFERENCES organization(id),
+            UNIQUE (user_id, org_id)
+        )
+    """)
+
+    # Create station table
+    migrator.sql("""
+        CREATE TABLE IF NOT EXISTS station (
+            id VARCHAR(32) PRIMARY KEY NOT NULL,
+            org_id VARCHAR(30),
+            FOREIGN KEY (org_id) REFERENCES organization(id)
+        )
+    """)
+
+    # Create camera table
+    migrator.sql("""
+        CREATE TABLE IF NOT EXISTS camera (
+            id VARCHAR(30) PRIMARY KEY NOT NULL,
+            name VARCHAR(30) NOT NULL,
+            station_id VARCHAR(32) NOT NULL,
+            FOREIGN KEY (station_id) REFERENCES station(id)
+        )
+    """)
 
 
 def rollback(migrator: Migrator, database: pw.Database, *, fake=False):
     """Write your rollback migrations here."""
+
+    migrator.sql("DROP TABLE IF EXISTS camera")
+    migrator.sql("DROP TABLE IF EXISTS station")
+    migrator.sql("DROP TABLE IF EXISTS userorganization")
+    migrator.sql("DROP TABLE IF EXISTS organization")
