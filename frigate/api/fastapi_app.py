@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from playhouse.sqliteq import SqliteQueueDatabase
 from slowapi import _rate_limit_exceeded_handler
@@ -69,6 +70,14 @@ def create_fastapi_app(
     app.add_middleware(
         middleware.ContextMiddleware,
         plugins=(plugins.ForwardedForPlugin(),),
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allows specified origins
+        allow_credentials=True,  # Allows cookies/authorization headers to be sent
+        allow_methods=["*"],  # Allows all methods (GET, POST, PUT, DELETE, etc.)
+        allow_headers=["*"],  # Allows all headers
     )
 
     # Middleware to connect to DB before and close connection after request

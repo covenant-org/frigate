@@ -21,14 +21,14 @@ from fastapi.params import Depends
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from markupsafe import escape
 from peewee import SQL, operator
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from frigate.api.auth import require_role
 from frigate.api.defs.query.app_query_parameters import AppTimelineHourlyQueryParameters
 from frigate.api.defs.request.app_body import AppConfigSetBody
 from frigate.api.defs.tags import Tags
 from frigate.config import FrigateConfig
-from frigate.models import Event, Timeline, Camera, Organization
+from frigate.models import Camera, Event, Organization, Timeline
 from frigate.stats.prometheus import get_metrics, update_metrics
 from frigate.util.builtin import (
     clean_camera_user_pass,
@@ -156,8 +156,9 @@ def config(request: Request):
     # remove the proxy secret
     config["proxy"].pop("auth_secret", None)
 
-    org = Organization.get(Organization.admin_id ==
-                           request.headers.get("remote-user", "anonymous"))
+    org = Organization.get(
+        Organization.admin_id == request.headers.get("remote-user", "anonymous")
+    )
     print(org.name)
     cameras = []
     if org is not None:
@@ -203,8 +204,7 @@ def config(request: Request):
 
         config["go2rtc"]["streams"][stream_name] = cleaned
 
-    config["plus"] = {
-        "enabled": request.app.frigate_config.plus_api.is_active()}
+    config["plus"] = {"enabled": request.app.frigate_config.plus_api.is_active()}
     config["model"]["colormap"] = config_obj.model.colormap
     config["model"]["all_attributes"] = config_obj.model.all_attributes
     config["model"]["non_logo_attributes"] = config_obj.model.non_logo_attributes
@@ -451,8 +451,7 @@ def ffprobe(request: Request, paths: str = ""):
 
         if not request.app.frigate_config.cameras[camera].enabled:
             return JSONResponse(
-                content=(
-                    {"success": False, "message": f"{camera} is not enabled."}),
+                content=({"success": False, "message": f"{camera} is not enabled."}),
                 status_code=404,
             )
 
@@ -469,8 +468,7 @@ def ffprobe(request: Request, paths: str = ""):
     output = []
 
     for path in paths:
-        ffprobe = ffprobe_stream(
-            request.app.frigate_config.ffmpeg, path.strip())
+        ffprobe = ffprobe_stream(request.app.frigate_config.ffmpeg, path.strip())
         output.append(
             {
                 "return_code": ffprobe.returncode,
@@ -534,8 +532,7 @@ async def logs(
         except FileNotFoundError as e:
             logger.error(e)
             return JSONResponse(
-                content={"success": False,
-                         "message": "Could not find log file"},
+                content={"success": False, "message": "Could not find log file"},
                 status_code=500,
             )
 
@@ -628,8 +625,7 @@ def restart():
 def get_labels(camera: str = ""):
     try:
         if camera:
-            events = Event.select(Event.label).where(
-                Event.camera == camera).distinct()
+            events = Event.select(Event.label).where(Event.camera == camera).distinct()
         else:
             events = Event.select(Event.label).distinct()
     except Exception as e:
@@ -864,4 +860,49 @@ def hourly_timeline(params: AppTimelineHourlyQueryParameters = Depends()):
             "count": count,
             "hours": hours,
         }
+    )
+
+
+@router.get("/sdp/offer")
+def get_sdp_offer(request: Request):
+    offer = request.app.state.webrtc_offer
+    if not offer:
+        return JSONResponse(
+            content={"success": False, "message": "SDP offer not available"},
+            status_code=404,
+        )
+    return JSONResponse(content={"sdp": offer.sdp, "type": offer.type})
+
+
+class SDPOffer(BaseModel):
+    sdp: str
+    type: str
+
+
+@router.post("/sdp/offer")
+def set_sdp_offer(request: Request, offer: SDPOffer):
+    request.app.state.webrtc_offer = offer
+    return JSONResponse(
+        content={"success": True, "message": "SDP offer set successfully"},
+        status_code=200,
+    )
+
+
+@router.get("/sdp/answer")
+def get_sdp_answer(request: Request):
+    offer = request.app.state.webrtc_answer
+    if not offer:
+        return JSONResponse(
+            content={"success": False, "message": "SDP answer not available"},
+            status_code=404,
+        )
+    return JSONResponse(content={"sdp": offer.sdp, "type": offer.type})
+
+
+@router.post("/sdp/answer")
+def set_sdp_answer(request: Request, answer: SDPOffer):
+    request.app.state.webrtc_answer = answer
+    return JSONResponse(
+        content={"success": True, "message": "SDP answer set successfully"},
+        status_code=200,
     )

@@ -1,6 +1,7 @@
 import { baseUrl } from "@/api/baseUrl";
 import { LivePlayerError, PlayerStatsType } from "@/types/live";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CgSleep } from "react-icons/cg";
 
 type WebRtcPlayerProps = {
   className?: string;
@@ -112,48 +113,61 @@ export default function WebRtcPlayer({
 
   const connect = useCallback(
     async (aPc: Promise<RTCPeerConnection | undefined>) => {
+      console.log("connect", aPc);
       if (!aPc) {
         return;
       }
 
       pcRef.current = await aPc;
-      const ws = new WebSocket(wsURL);
-
-      ws.addEventListener("open", () => {
+      let offer = await pcRef.current?.createOffer();
+      console.log("offer", offer);
+      offer = await pcRef.current?.createOffer();
+      await pcRef.current?.setLocalDescription(offer);
+      await new Promise<void>((resolve) => {
         pcRef.current?.addEventListener("icecandidate", (ev) => {
-          if (!ev.candidate) return;
-          const msg = {
-            type: "webrtc/candidate",
-            value: ev.candidate.candidate,
-          };
-          ws.send(JSON.stringify(msg));
+          console.log("icecandidate", ev.candidate);
+          if (!ev.candidate) resolve();
         });
-
-        pcRef.current
-          ?.createOffer()
-          .then((offer) => pcRef.current?.setLocalDescription(offer))
-          .then(() => {
-            const msg = {
-              type: "webrtc/offer",
-              value: pcRef.current?.localDescription?.sdp,
-            };
-            ws.send(JSON.stringify(msg));
-          });
+      });
+      offer = await pcRef.current?.createOffer();
+      await pcRef.current?.setLocalDescription(offer);
+      const msg = {
+        type: "webrtc/offer",
+        sdp: pcRef.current?.localDescription?.sdp,
+      };
+      const body = JSON.stringify(msg);
+      let res = await fetch("http://localhost:5000/api/sdp/offer", {
+        method: "POST",
+        body,
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-TOKEN": "1",
+        },
       });
 
-      ws.addEventListener("message", (ev) => {
-        const msg = JSON.parse(ev.data);
-        if (msg.type === "webrtc/candidate") {
-          pcRef.current?.addIceCandidate({ candidate: msg.value, sdpMid: "0" });
-        } else if (msg.type === "webrtc/answer") {
-          pcRef.current?.setRemoteDescription({
-            type: "answer",
-            sdp: msg.value,
-          });
-        }
+      if (!res.ok) {
+        onError?.("startup");
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+      console.log("fetching answer");
+      res = await fetch("http://localhost:5000/api/sdp/answer", {
+        method: "GET",
+      });
+
+      if (!res.ok) {
+        onError?.("startup");
+        return;
+      }
+
+      const data = await res.json();
+      pcRef.current?.setRemoteDescription({
+        type: "answer",
+        sdp: data.sdp,
       });
     },
-    [wsURL],
+    [onError],
   );
 
   useEffect(() => {
@@ -164,6 +178,7 @@ export default function WebRtcPlayer({
     if (!playbackEnabled) {
       return;
     }
+    console.log("help");
 
     const aPc = PeerConnection(
       microphoneEnabled ? "video+audio+microphone" : "video+audio",
@@ -232,74 +247,6 @@ export default function WebRtcPlayer({
   };
 
   // stats
-
-  useEffect(() => {
-    if (!pcRef.current || !getStats) return;
-
-    let lastBytesReceived = 0;
-    let lastTimestamp = 0;
-
-    const interval = setInterval(async () => {
-      if (pcRef.current && videoRef.current && !videoRef.current.paused) {
-        const report = await pcRef.current.getStats();
-        let bytesReceived = 0;
-        let timestamp = 0;
-        let roundTripTime = 0;
-        let framesReceived = 0;
-        let framesDropped = 0;
-        let framesDecoded = 0;
-
-        report.forEach((stat) => {
-          if (stat.type === "inbound-rtp" && stat.kind === "video") {
-            bytesReceived = stat.bytesReceived;
-            timestamp = stat.timestamp;
-            framesReceived = stat.framesReceived;
-            framesDropped = stat.framesDropped;
-            framesDecoded = stat.framesDecoded;
-          }
-          if (stat.type === "candidate-pair" && stat.state === "succeeded") {
-            roundTripTime = stat.currentRoundTripTime;
-          }
-        });
-
-        const timeDiff = (timestamp - lastTimestamp) / 1000; // in seconds
-        const bitrate =
-          timeDiff > 0
-            ? (bytesReceived - lastBytesReceived) / timeDiff / 1000
-            : 0; // in kBps
-
-        setStats?.({
-          streamType: "WebRTC",
-          bandwidth: Math.round(bitrate),
-          latency: roundTripTime,
-          totalFrames: framesReceived,
-          droppedFrames: framesDropped,
-          decodedFrames: framesDecoded,
-          droppedFrameRate:
-            framesReceived > 0 ? (framesDropped / framesReceived) * 100 : 0,
-        });
-
-        lastBytesReceived = bytesReceived;
-        lastTimestamp = timestamp;
-      }
-    }, 1000);
-
-    return () => {
-      clearInterval(interval);
-      setStats?.({
-        streamType: "-",
-        bandwidth: 0,
-        latency: undefined,
-        totalFrames: 0,
-        droppedFrames: undefined,
-        decodedFrames: 0,
-        droppedFrameRate: 0,
-      });
-    };
-    // we need to listen on the value of the ref
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pcRef, pcRef.current, getStats]);
-
   return (
     <video
       ref={videoRef}

@@ -15,8 +15,13 @@ import (
 	"resty.dev/v3"
 )
 
+type SDPRequest struct {
+	SDP  string `json:"sdp"`
+	Type string `json:"type"`
+}
+
 func main() {
-	u, err := base.ParseURL("rtsp://172.17.0.1:8558/bunny")
+	u, err := base.ParseURL("rtsp://localhost:8558/bunny")
 	if err != nil {
 		panic(err)
 	}
@@ -43,7 +48,7 @@ func main() {
 	}
 
 	// setup all medias
-	err = c.SetupAll(desc.BaseURL, desc.Medias[:0])
+	err = c.SetupAll(desc.BaseURL, desc.Medias)
 	if err != nil {
 		panic(err)
 	}
@@ -59,6 +64,7 @@ func main() {
 		panic(err)
 	}
 	var rtpSender *webrtc.RTPSender
+	var track *webrtc.TrackLocalStaticRTP
 
 	// for each media, create a corresponding WebRTC track
 	for _, medi := range desc.Medias {
@@ -78,7 +84,7 @@ func main() {
 			continue
 		}
 
-		track, err := webrtc.NewTrackLocalStaticRTP(
+		track, err = webrtc.NewTrackLocalStaticRTP(
 			codec,
 			mediType,
 			"pion",
@@ -115,22 +121,61 @@ func main() {
 	})
 
 	// Wait for the offer to be pasted
-	offer := webrtc.SessionDescription{}
 	httpClient := resty.New()
 	defer httpClient.Close()
-	res, err := httpClient.R().SetHeader("Content-Type", "application/json").
-		SetBody(`{"action":"getOffer"}`).
-		Post("http://localhost:5000/sdp")
+	res, err := httpClient.R().Get("http://localhost:5000/api/sdp/offer")
 	if err != nil {
 		panic(err)
 	}
-	if err = json.Unmarshal(res.Bytes(), offer); err != nil {
+	fmt.Printf("SDP offer response received:\n%v\n", res.String())
+	var resq SDPRequest
+	err = json.Unmarshal(res.Bytes(), &resq)
+	if err != nil {
+		panic(err)
+	}
+
+	offer := webrtc.SessionDescription{}
+	fmt.Printf("SDP offer received:\n%v\n", resq.SDP)
+	offer.SDP = resq.SDP
+	offer.Type = webrtc.SDPTypeOffer
+
+	// Set the remote SessionDescription
+	if err = peerConnection.SetRemoteDescription(offer); err != nil {
+		panic(err)
+	}
+
+	// Create answer
+	answer, err := peerConnection.CreateAnswer(nil)
+	if err != nil {
+		panic(err)
+	}
+
+	// Create channel that is blocked until ICE Gathering is complete
+	gatherComplete := webrtc.GatheringCompletePromise(peerConnection)
+
+	// Sets the LocalDescription, and starts our UDP listeners
+	if err = peerConnection.SetLocalDescription(answer); err != nil {
+		panic(err)
+	}
+
+	// Block until ICE Gathering is complete, disabling trickle ICE
+	// we do this because we only can exchange one signaling message
+	// in a production application you should exchange ICE Candidates via OnICECandidate
+	<-gatherComplete
+
+	ldesc := peerConnection.LocalDescription()
+	_, err = httpClient.R().SetBody(SDPRequest{
+		SDP:  ldesc.SDP,
+		Type: ldesc.Type.String(),
+	}).SetHeader("X-CSRF-TOKEN", "1").Post("http://localhost:5000/api/sdp/answer")
+	if err != nil {
 		panic(err)
 	}
 
 	// called when a RTP packet arrives
-	c.OnPacketRTPAny(func(medi *description.Media, _ format.Format, _ *rtp.Packet) {
-		log.Printf("RTP packet from media %v\n", medi.Type == desc)
+	c.OnPacketRTPAny(func(medi *description.Media, _ format.Format, packet *rtp.Packet) {
+		track.WriteRTP(packet)
+		log.Printf("RTP packet from media %v\n", medi.Type)
 	})
 
 	// called when a RTCP packet arrives
