@@ -1,58 +1,34 @@
+// SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
+// SPDX-License-Identifier: MIT
+
+//go:build !js
+// +build !js
+
+// rtp-to-webrtc demonstrates how to consume a RTP stream video UDP, and then send to a WebRTC client.
 package main
 
 import (
+	"bufio"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
+	"io"
+	"net"
+	"os"
+	"strings"
 
-	"github.com/bluenviron/gortsplib/v5"
-	"github.com/bluenviron/gortsplib/v5/pkg/base"
-	"github.com/bluenviron/gortsplib/v5/pkg/description"
-	"github.com/bluenviron/gortsplib/v5/pkg/format"
-	"github.com/pion/rtcp"
-	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 	"resty.dev/v3"
 )
 
-type SDPRequest struct {
+type SDPMessage struct {
 	SDP  string `json:"sdp"`
 	Type string `json:"type"`
 }
 
+// nolint:cyclop
 func main() {
-	u, err := base.ParseURL("rtsp://localhost:8558/bunny")
-	if err != nil {
-		panic(err)
-	}
-
-	c := gortsplib.Client{
-		Scheme: u.Scheme,
-		Host:   u.Host,
-	}
-
-	err = c.Start()
-	if err != nil {
-		panic(err)
-	}
-	defer c.Close()
-
-	desc, _, err := c.Describe(u)
-	if err != nil {
-		panic(err)
-	}
-
-	log.Printf("Available medias: %v\n", desc.Medias)
-	if desc.Medias == nil || len(desc.Medias) == 0 {
-		panic("no medias found")
-	}
-
-	// setup all medias
-	err = c.SetupAll(desc.BaseURL, desc.Medias)
-	if err != nil {
-		panic(err)
-	}
-
 	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
@@ -63,50 +39,50 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	var rtpSender *webrtc.RTPSender
-	var track *webrtc.TrackLocalStaticRTP
 
-	// for each media, create a corresponding WebRTC track
-	for _, medi := range desc.Medias {
-		var codec webrtc.RTPCodecCapability
-		var mediType string
-
-		switch medi.Type {
-		case description.MediaTypeVideo:
-			codec = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}
-			mediType = "video"
-		case description.MediaTypeAudio:
-			codec = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypePCMU}
-			mediType = "audio"
-			continue
-		default:
-			log.Printf("unsupported media type: %v\n", medi.Type)
-			continue
-		}
-
-		track, err = webrtc.NewTrackLocalStaticRTP(
-			codec,
-			mediType,
-			"pion",
-		)
-		if err != nil {
-			panic(err)
-		}
-
-		rtpSender, err = peerConnection.AddTrack(track)
-		if err != nil {
-			panic(err)
-		}
-
-		go func() {
-			rtcpBuf := make([]byte, 1500)
-			for {
-				if _, _, rtcpErr := rtpSender.Read(rtcpBuf); rtcpErr != nil {
-					return
-				}
-			}
-		}()
+	// Open a UDP Listener for RTP Packets on port 5004
+	listener, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 5004})
+	if err != nil {
+		panic(err)
 	}
+
+	// Increase the UDP receive buffer size
+	// Default UDP buffer sizes vary on different operating systems
+	bufferSize := 300000 // 300KB
+	err = listener.SetReadBuffer(bufferSize)
+	if err != nil {
+		panic(err)
+	}
+
+	defer func() {
+		if err = listener.Close(); err != nil {
+			panic(err)
+		}
+	}()
+
+	// Create a video track
+	videoTrack, err := webrtc.NewTrackLocalStaticRTP(
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, "video", "pion",
+	)
+	if err != nil {
+		panic(err)
+	}
+	rtpSender, err := peerConnection.AddTrack(videoTrack)
+	if err != nil {
+		panic(err)
+	}
+
+	// Read incoming RTCP packets
+	// Before these packets are returned they are processed by interceptors. For things
+	// like NACK this needs to be called.
+	go func() {
+		rtcpBuf := make([]byte, 1500)
+		for {
+			if _, _, rtcpErr := rtpSender.Read(rtcpBuf); rtcpErr != nil {
+				return
+			}
+		}
+	}()
 
 	// Set the handler for ICE connection state
 	// This will notify you when the peer has connected/disconnected
@@ -121,22 +97,22 @@ func main() {
 	})
 
 	// Wait for the offer to be pasted
-	httpClient := resty.New()
-	defer httpClient.Close()
-	res, err := httpClient.R().Get("http://localhost:5000/api/sdp/offer")
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("SDP offer response received:\n%v\n", res.String())
-	var resq SDPRequest
-	err = json.Unmarshal(res.Bytes(), &resq)
-	if err != nil {
-		panic(err)
-	}
-
 	offer := webrtc.SessionDescription{}
-	fmt.Printf("SDP offer received:\n%v\n", resq.SDP)
-	offer.SDP = resq.SDP
+	httpClient := resty.New()
+	resp, err := httpClient.R().
+		SetHeader("Content-Type", "application/json").
+		SetHeader("X-CSRF-TOKEN", "1").
+		Get("http://localhost:5000/api/sdp/offer")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(resp.String())
+	var msg SDPMessage
+	if err = json.Unmarshal(resp.Bytes(), &msg); err != nil {
+		panic(err)
+	}
+	fmt.Printf("Received offer %s\n", msg.SDP)
+	offer.SDP = msg.SDP
 	offer.Type = webrtc.SDPTypeOffer
 
 	// Set the remote SessionDescription
@@ -162,33 +138,72 @@ func main() {
 	// we do this because we only can exchange one signaling message
 	// in a production application you should exchange ICE Candidates via OnICECandidate
 	<-gatherComplete
+	httpClient.R().
+		SetHeader("Content-Type", "application/json").
+		SetHeader("X-CSRF-TOKEN", "1").
+		SetBody(SDPMessage{
+			Type: "answer",
+			SDP:  peerConnection.LocalDescription().SDP}).
+		Post("http://localhost:5000/api/sdp/answer")
 
-	ldesc := peerConnection.LocalDescription()
-	_, err = httpClient.R().SetBody(SDPRequest{
-		SDP:  ldesc.SDP,
-		Type: ldesc.Type.String(),
-	}).SetHeader("X-CSRF-TOKEN", "1").Post("http://localhost:5000/api/sdp/answer")
+	// Read RTP packets forever and send them to the WebRTC Client
+	inboundRTPPacket := make([]byte, 1600) // UDP MTU
+	for {
+		n, _, err := listener.ReadFrom(inboundRTPPacket)
+		if err != nil {
+			panic(fmt.Sprintf("error during read: %s", err))
+		}
+
+		if _, err = videoTrack.Write(inboundRTPPacket[:n]); err != nil {
+			if errors.Is(err, io.ErrClosedPipe) {
+				// The peerConnection has been closed.
+				return
+			}
+
+			panic(err)
+		}
+	}
+}
+
+// Read from stdin until we get a newline.
+func readUntilNewline() (in string) {
+	var err error
+
+	r := bufio.NewReader(os.Stdin)
+	for {
+		in, err = r.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			panic(err)
+		}
+
+		if in = strings.TrimSpace(in); len(in) > 0 {
+			break
+		}
+	}
+
+	fmt.Println("")
+
+	return
+}
+
+// JSON encode + base64 a SessionDescription.
+func encode(obj *webrtc.SessionDescription) string {
+	b, err := json.Marshal(obj)
 	if err != nil {
 		panic(err)
 	}
 
-	// called when a RTP packet arrives
-	c.OnPacketRTPAny(func(medi *description.Media, _ format.Format, packet *rtp.Packet) {
-		track.WriteRTP(packet)
-		log.Printf("RTP packet from media %v\n", medi.Type)
-	})
+	return base64.StdEncoding.EncodeToString(b)
+}
 
-	// called when a RTCP packet arrives
-	c.OnPacketRTCPAny(func(medi *description.Media, pkt rtcp.Packet) {
-		log.Printf("RTCP packet from media %v, type %T\n", medi, pkt)
-	})
-
-	// start playing
-	_, err = c.Play(nil)
+// Decode a base64 and unmarshal JSON into a SessionDescription.
+func decode(in string, obj *webrtc.SessionDescription) {
+	b, err := base64.StdEncoding.DecodeString(in)
 	if err != nil {
 		panic(err)
 	}
 
-	// wait until a fatal error
-	panic(c.Wait())
+	if err = json.Unmarshal(b, obj); err != nil {
+		panic(err)
+	}
 }
