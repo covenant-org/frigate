@@ -21,6 +21,7 @@ from frigate.api import (
     notification,
     preview,
     review,
+    station,
 )
 from frigate.api.auth import get_jwt_secret, limiter
 from frigate.comms.event_metadata_updater import (
@@ -127,6 +128,7 @@ def create_fastapi_app(
     app.include_router(export.router)
     app.include_router(event.router)
     app.include_router(media.router)
+    app.include_router(station.router)
     # App Properties
     app.frigate_config = frigate_config
     app.embeddings = embeddings

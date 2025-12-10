@@ -12,3 +12,4 @@ class Tags(Enum):
     events = "Events"
     classification = "classification"
     auth = "Auth"
+    station = "Station"
