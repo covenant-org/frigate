@@ -35,28 +35,28 @@ with suppress(ImportError):
 
 
 def migrate(migrator: Migrator, database: pw.Database, *, fake=False):
-    """Write your migrations here."""
+    """Create organization, userorganization, station, and camera tables."""
 
-    # Create organization table
+    # Create organization table with integer autoincrement primary key
     migrator.sql("""
         CREATE TABLE IF NOT EXISTS organization (
-            id VARCHAR(30) PRIMARY KEY NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             name VARCHAR(30),
             user_id VARCHAR(30) NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES user(username)
+            FOREIGN KEY (user_id) REFERENCES user(username) ON DELETE CASCADE
         )
     """)
 
-    # Create userorganization table
+    # Create userorganization table with composite unique constraint
     migrator.sql("""
         CREATE TABLE IF NOT EXISTS userorganization (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id VARCHAR(30) NOT NULL,
-            org_id VARCHAR(30) NOT NULL,
+            org_id INTEGER NOT NULL,
             role VARCHAR(20) DEFAULT 'admin',
-            FOREIGN KEY (user_id) REFERENCES user(username),
-            FOREIGN KEY (org_id) REFERENCES organization(id),
-            UNIQUE (user_id, org_id)
+            UNIQUE (user_id, org_id),
+            FOREIGN KEY (user_id) REFERENCES user(username) ON DELETE CASCADE,
+            FOREIGN KEY (org_id) REFERENCES organization(id) ON DELETE CASCADE
         )
     """)
 
@@ -64,8 +64,8 @@ def migrate(migrator: Migrator, database: pw.Database, *, fake=False):
     migrator.sql("""
         CREATE TABLE IF NOT EXISTS station (
             id VARCHAR(32) PRIMARY KEY NOT NULL,
-            org_id VARCHAR(30),
-            FOREIGN KEY (org_id) REFERENCES organization(id)
+            org_id INTEGER,
+            FOREIGN KEY (org_id) REFERENCES organization(id) ON DELETE CASCADE
         )
     """)
 
@@ -75,13 +75,13 @@ def migrate(migrator: Migrator, database: pw.Database, *, fake=False):
             id VARCHAR(30) PRIMARY KEY NOT NULL,
             name VARCHAR(30) NOT NULL,
             station_id VARCHAR(32) NOT NULL,
-            FOREIGN KEY (station_id) REFERENCES station(id)
+            FOREIGN KEY (station_id) REFERENCES station(id) ON DELETE CASCADE
         )
     """)
 
 
 def rollback(migrator: Migrator, database: pw.Database, *, fake=False):
-    """Write your rollback migrations here."""
+    """Rollback the migration - drop all created tables."""
 
     migrator.sql("DROP TABLE IF EXISTS camera")
     migrator.sql("DROP TABLE IF EXISTS station")

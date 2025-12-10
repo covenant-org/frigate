@@ -108,7 +108,7 @@ def version():
 @router.get("/stats")
 def stats(request: Request):
     user = request.headers.get("remote-user", "anonymous")
-    org = Organization.get(Organization.admin_id == user)
+    org = Organization.get(Organization.user_id == user)
     cameras = []
     if org is not None:
         print(org.name)
@@ -157,7 +157,7 @@ def config(request: Request):
     config["proxy"].pop("auth_secret", None)
 
     org = Organization.get(
-        Organization.admin_id == request.headers.get("remote-user", "anonymous")
+        Organization.user_id == request.headers.get("remote-user", "anonymous")
     )
     print(org.name)
     cameras = []

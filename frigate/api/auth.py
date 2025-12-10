@@ -28,7 +28,7 @@ from frigate.api.defs.request.app_body import (
 from frigate.api.defs.tags import Tags
 from frigate.config import AuthConfig, ProxyConfig
 from frigate.const import CONFIG_DIR, JWT_SECRET_ENV_VAR, PASSWORD_HASH_ALGORITHM
-from frigate.models import User, Organization, UserOrganization
+from frigate.models import Organization, User, UserOrganization
 
 logger = logging.getLogger(__name__)
 
@@ -106,18 +106,15 @@ def get_jwt_secret() -> str:
         jwt_secret = os.environ.get(JWT_SECRET_ENV_VAR)
     # check docker secrets
     elif os.path.isfile(os.path.join("/run/secrets", JWT_SECRET_ENV_VAR)):
-        logger.debug(
-            f"Using jwt secret from {JWT_SECRET_ENV_VAR} docker secret file.")
+        logger.debug(f"Using jwt secret from {JWT_SECRET_ENV_VAR} docker secret file.")
         jwt_secret = (
-            Path(os.path.join("/run/secrets", JWT_SECRET_ENV_VAR)
-                 ).read_text().strip()
+            Path(os.path.join("/run/secrets", JWT_SECRET_ENV_VAR)).read_text().strip()
         )
     # check for the add-on options file
     elif os.path.isfile("/data/options.json"):
         with open("/data/options.json") as f:
             raw_options = f.read()
-        logger.debug(
-            "Using jwt secret from Home Assistant Add-on options file.")
+        logger.debug("Using jwt secret from Home Assistant Add-on options file.")
         options = json.loads(raw_options)
         jwt_secret = options.get("jwt_secret")
 
@@ -137,8 +134,7 @@ def get_jwt_secret() -> str:
                     "Unable to write jwt token file to config directory. A new jwt token will be created at each startup."
                 )
         else:
-            logger.debug(
-                "Using jwt secret from .jwt_secret file in config directory.")
+            logger.debug("Using jwt secret from .jwt_secret file in config directory.")
             with open(jwt_secret_file) as f:
                 try:
                     jwt_secret = f.readline().strip()
@@ -256,8 +252,7 @@ def auth(request: Request):
         proxy_config.auth_secret is not None
         and request.headers.get("x-proxy-secret", "") != proxy_config.auth_secret
     ):
-        logger.debug(
-            "X-Proxy-Secret header does not match configured secret value")
+        logger.debug("X-Proxy-Secret header does not match configured secret value")
         return fail_response
 
     # if auth is disabled, just apply the proxy header map and return success
@@ -282,8 +277,7 @@ def auth(request: Request):
         # if comma-separated with "viewer", use "viewer",
         # else use default role
 
-        roles = [r.strip() for r in role.split(
-            proxy_config.separator)] if role else []
+        roles = [r.strip() for r in role.split(proxy_config.separator)] if role else []
         success_response.headers["remote-role"] = next(
             (r for r in VALID_ROLES if r in roles), proxy_config.default_role
         )
@@ -413,8 +407,7 @@ def login(request: Request, body: AppPostLoginBody):
         if role not in VALID_ROLES:
             role = "viewer"  # Enforce valid roles
         expiration = int(time.time()) + JWT_SESSION_LENGTH
-        encoded_jwt = create_encoded_jwt(
-            user, role, expiration, request.app.jwt_token)
+        encoded_jwt = create_encoded_jwt(user, role, expiration, request.app.jwt_token)
         response = Response("", 200)
         set_jwt_cookie(
             response, JWT_COOKIE_NAME, encoded_jwt, expiration, JWT_COOKIE_SECURE
@@ -426,8 +419,7 @@ def login(request: Request, body: AppPostLoginBody):
 @router.get("/users", dependencies=[Depends(require_role(["admin"]))])
 def get_users():
     exports = (
-        User.select(User.username, User.role).order_by(
-            User.username).dicts().iterator()
+        User.select(User.username, User.role).order_by(User.username).dicts().iterator()
     )
     return JSONResponse([e for e in exports])
 
@@ -444,7 +436,7 @@ def signup(
 
     role = "admin"
     password_hash = hash_password(body.password, iterations=HASH_ITERATIONS)
-    User.insert(
+    user = User.insert(
         {
             User.username: body.username,
             User.password_hash: password_hash,
@@ -452,25 +444,28 @@ def signup(
             User.notification_tokens: [],
         }
     ).execute()
-    org_id = Organization.insert({
-        Organization.name: f"{body.username}'s org",
-        Organization.admin_id: body.username,
-    }).execute()
-    UserOrganization.insert({
-        UserOrganization.user_id: body.username,
-        UserOrganization.org_id: org_id,
-        UserOrganization.role: role,
-    }).execute()
+    org_id = Organization.insert(
+        {
+            Organization.name: f"{body.username}'s org",
+            Organization.user: user,
+        }
+    ).execute()
+    UserOrganization.insert(
+        {
+            UserOrganization.user: body.username,
+            UserOrganization.org: org_id,
+            UserOrganization.role: role,
+        }
+    ).execute()
     res = JSONResponse(content={"username": body.username})
     JWT_COOKIE_NAME = request.app.frigate_config.auth.cookie_name
     JWT_COOKIE_SECURE = request.app.frigate_config.auth.cookie_secure
     JWT_SESSION_LENGTH = request.app.frigate_config.auth.session_length
     expiration = int(time.time()) + JWT_SESSION_LENGTH
     encoded_jwt = create_encoded_jwt(
-        body.username, role, expiration, request.app.jwt_token)
-    set_jwt_cookie(
-        res, JWT_COOKIE_NAME, encoded_jwt, expiration, JWT_COOKIE_SECURE
+        body.username, role, expiration, request.app.jwt_token
     )
+    set_jwt_cookie(res, JWT_COOKIE_NAME, encoded_jwt, expiration, JWT_COOKIE_SECURE)
     return res
 
 

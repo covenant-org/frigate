@@ -1,4 +1,5 @@
 from peewee import (
+    BigAutoField,
     BooleanField,
     CharField,
     DateTimeField,
@@ -137,7 +138,7 @@ class User(Model):  # type: ignore[misc]
 
 
 class Organization(Model):
-    id = CharField(null=False, primary_key=True, max_length=30)
+    id = BigAutoField(primary_key=True)
     name = CharField(max_length=30)
     user = ForeignKeyField(User, backref="owner")
 
