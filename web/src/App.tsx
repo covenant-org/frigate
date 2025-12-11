@@ -24,7 +24,6 @@ const UIPlayground = lazy(() => import("@/pages/UIPlayground"));
 const FaceLibrary = lazy(() => import("@/pages/FaceLibrary"));
 const Logs = lazy(() => import("@/pages/Logs"));
 const AccessDenied = lazy(() => import("@/pages/AccessDenied"));
-const Test = lazy(() => import("@/pages/Test"));
 
 function App() {
   return (
@@ -47,7 +46,6 @@ function App() {
               >
                 <Suspense>
                   <Routes>
-                    <Route path="/test" element={<Test />} />
                     <Route
                       element={
                         <ProtectedRoute requiredRoles={["viewer", "admin"]} />
