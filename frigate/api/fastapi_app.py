@@ -15,6 +15,7 @@ from frigate.api import app as main_app
 from frigate.api import (
     auth,
     classification,
+    clip,
     event,
     export,
     media,
@@ -24,6 +25,7 @@ from frigate.api import (
     station,
 )
 from frigate.api.auth import get_jwt_secret, limiter
+from frigate.api.providers.base import FileUploaderProvider
 from frigate.comms.event_metadata_updater import (
     EventMetadataPublisher,
 )
@@ -59,6 +61,7 @@ def create_fastapi_app(
     onvif: OnvifController,
     stats_emitter: StatsEmitter,
     event_metadata_updater: EventMetadataPublisher,
+    file_provider: FileUploaderProvider,
 ):
     logger.info("Starting FastAPI app")
     app = FastAPI(
@@ -129,6 +132,7 @@ def create_fastapi_app(
     app.include_router(event.router)
     app.include_router(media.router)
     app.include_router(station.router)
+    app.include_router(clip.router)
     # App Properties
     app.frigate_config = frigate_config
     app.embeddings = embeddings
@@ -139,5 +143,6 @@ def create_fastapi_app(
     app.stats_emitter = stats_emitter
     app.event_metadata_updater = event_metadata_updater
     app.jwt_token = get_jwt_secret() if frigate_config.auth.enabled else None
+    app.file_provider = file_provider
 
     return app

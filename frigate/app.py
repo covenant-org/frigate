@@ -17,6 +17,7 @@ from playhouse.sqlite_ext import SqliteExtDatabase
 import frigate.util as util
 from frigate.api.auth import hash_password
 from frigate.api.fastapi_app import create_fastapi_app
+from frigate.api.providers.r2 import R2Provider
 from frigate.camera import CameraMetrics, PTZMetrics
 from frigate.comms.base_communicator import Communicator
 from frigate.comms.config_updater import ConfigPublisher
@@ -272,6 +273,14 @@ class FrigateApp:
         embedding_process.start()
         self.processes["embeddings"] = embedding_process.pid or 0
         logger.info(f"Embedding process started: {embedding_process.pid}")
+
+    def init_file_provider(self) -> None:
+        self.file_provider = R2Provider(
+            endpoint_url=f"https://{os.getenv('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com",
+            bucket_name=os.getenv("R2_BUCKET_NAME"),
+            access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
+            secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
+        )
 
     def bind_database(self) -> None:
         """Bind db to the main process."""
@@ -663,6 +672,7 @@ class FrigateApp:
         self.init_inter_process_communicator()
         self.init_dispatcher()
         self.init_embeddings_client()
+        self.init_file_provider()
         self.start_video_output_processor()
         self.start_ptz_autotracker()
         self.init_historical_regions()
@@ -691,6 +701,7 @@ class FrigateApp:
                     self.onvif_controller,
                     self.stats_emitter,
                     self.event_metadata_updater,
+                    self.file_provider,
                 ),
                 host="127.0.0.1",
                 port=5001,

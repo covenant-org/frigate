@@ -13,3 +13,4 @@ class Tags(Enum):
     classification = "classification"
     auth = "Auth"
     station = "Station"
+    clip = "Clip"

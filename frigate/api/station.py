@@ -19,5 +19,5 @@ async def create(
     _: Request,
     body: StationPostCreateBody,
 ):
-    result = Station.create(id=body.id)
+    Station.create(id=body.id)
     return JSONResponse(content={"id": body.id})
