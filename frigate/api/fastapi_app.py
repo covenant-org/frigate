@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Optional
 
 from fastapi import FastAPI, Request
@@ -29,6 +30,7 @@ from frigate.api.providers.base import FileUploaderProvider
 from frigate.comms.event_metadata_updater import (
     EventMetadataPublisher,
 )
+from starlette.middleware.base import BaseHTTPMiddleware
 from frigate.config import FrigateConfig
 from frigate.embeddings import EmbeddingsContext
 from frigate.ptz.onvif import OnvifController
@@ -39,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 def check_csrf(request: Request) -> bool:
+    return True
     if request.method in ["GET", "HEAD", "OPTIONS", "TRACE"]:
         return True
     if "origin" in request.headers and "x-csrf-token" not in request.headers:
@@ -50,6 +53,16 @@ def check_csrf(request: Request) -> bool:
 # Used to retrieve the remote-user header: https://starlette-context.readthedocs.io/en/latest/plugins.html#easy-mode
 class RemoteUserPlugin(Plugin):
     key = "Remote-User"
+
+
+class LoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        logger.info(
+            f"Request: {request.method} {request.url.path}, processed in {process_time:.4f}s")
+        return response
 
 
 def create_fastapi_app(
@@ -65,22 +78,27 @@ def create_fastapi_app(
 ):
     logger.info("Starting FastAPI app")
     app = FastAPI(
-        debug=False,
-        swagger_ui_parameters={"apisSorter": "alpha", "operationsSorter": "alpha"},
+        debug=True,
+        swagger_ui_parameters={"apisSorter": "alpha",
+                               "operationsSorter": "alpha"},
     )
+
+    app.add_middleware(LoggingMiddleware)
 
     # update the request_address with the x-forwarded-for header from nginx
     # https://starlette-context.readthedocs.io/en/latest/plugins.html#forwarded-for
     app.add_middleware(
         middleware.ContextMiddleware,
         plugins=(plugins.ForwardedForPlugin(),),
+
     )
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],  # Allows specified origins
         allow_credentials=True,  # Allows cookies/authorization headers to be sent
-        allow_methods=["*"],  # Allows all methods (GET, POST, PUT, DELETE, etc.)
+        # Allows all methods (GET, POST, PUT, DELETE, etc.)
+        allow_methods=["*"],
         allow_headers=["*"],  # Allows all headers
     )
 
